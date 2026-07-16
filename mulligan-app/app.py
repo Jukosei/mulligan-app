@@ -3,7 +3,6 @@ import pandas as pd
 from scipy.stats import hypergeom
 
 st.title("🎤 神椿TCG マリガン確率計算機")
-st.caption("※初手にArtistが1枚も来ない場合、引けるまで何度でも引き直す公式ルールに完全対応。")
 
 # 固定ルール
 N = 60  # デッキ枚数
@@ -17,18 +16,14 @@ K_bad = st.number_input("② 妥協のArtist（ハズレ）の枚数", value=2, 
 K_total_artist = K_good + K_bad
 
 if K_total_artist > N:
-    st.error("Artist the 合計枚数がデッキ枚数(60枚)を超えています。")
+    st.error("Artistの合計枚数がデッキ枚数(60枚)を超えています。")
 elif K_total_artist == 0:
     st.error("デッキにアーティストが0枚の場合、ゲームを開始できません。")
 else:
     # --- 1回の手札(7枚)における基本的な確率 ---
-    # Artistが1枚も出ない確率（＝引き直しループ継続）
     p_zero = hypergeom.pmf(0, N, K_total_artist, n)
-    
-    # 7枚の中にアタリが1枚以上ある確率
     p_good_any = 1 - hypergeom.pmf(0, N, K_good, n)
     
-    # 7枚の中にアタリがなく、ハズレだけがある確率（＝ループ終了、妥協スタート）
     p_bad_only = 1 - p_zero - p_good_any
     if p_bad_only < 0: p_bad_only = 0
 
@@ -45,7 +40,6 @@ else:
     )
 
     st.header("📊 最終的な初手パターンの確率")
-    st.caption("アーティストが手札に来るまで引き直した結果、最終的にゲームが始まる際の手札の確率です。")
     
     # 2択だけでメトリック表示
     col1, col2 = st.columns(2)
@@ -54,7 +48,7 @@ else:
     with col2:
         st.metric("⚠️ 妥協スタート (ハズレのみ)", f"{p_final_bad * 100:.2f}%")
 
-    # グラフ用データ作成（2択のみ）
+    # グラフ用データ作成
     df_chart = pd.DataFrame({
         "初期手札の結果": ["理想スタート", "妥協スタート"],
         "確率 (%)": [p_final_good * 100, p_final_bad * 100]
