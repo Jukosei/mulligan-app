@@ -77,11 +77,10 @@ else:
     # --- 確率計算（手番ドロー＋各種ドロー連携） ---
     base_cards = n + turn_draw
 
-    # パターン1: 何も使わずに最初からキーカードを直接引いている確率
+    # --- キーカードの計算 ---
     p_magic_direct = 1 - hypergeom.pmf(0, N, K_magic, base_cards)
     p_no_magic_before_draw = hypergeom.pmf(0, N, K_magic, base_cards)
     
-    # 手札のリセット札・通常ドロー札の所持率
     p_has_warp = 1 - hypergeom.pmf(0, N, K_warp, base_cards)
     p_has_next = 1 - hypergeom.pmf(0, N, K_next, base_cards)
 
@@ -109,16 +108,30 @@ else:
     p_total_magic_success = p_magic_direct + (p_no_magic_before_draw * p_magic_via_any_action)
     if p_total_magic_success > 1.0: p_total_magic_success = 1.0
 
-    # --- 🔥 2枚目以降のArtistをキープできている確率の計算 ---
-    # マリガンによって「Artistが1枚以上いる確定した7枚」における、Artistの合計枚数が「2枚以上」である確率
-    p_artist_exactly_1 = hypergeom.pmf(1, N, K_total_artist, n)
-    p_artist_at_least_2_in_7 = (p_end - p_artist_exactly_1) / p_end # 7枚時点での条件付き確率
+    # --- 🔥 2枚目以降のArtist引き込み計算 ---
+    p_art_zero_in_base = hypergeom.pmf(0, N, K_total_artist, base_cards)
+    p_art_exact1_in_base = hypergeom.pmf(1, N, K_total_artist, base_cards) / (1.0 - p_art_zero_in_base)
+    p_art_direct_ge2 = (1.0 - p_art_zero_in_base - hypergeom.pmf(1, N, K_total_artist, base_cards)) / (1.0 - p_art_zero_in_base)
+
+    # 1枚目を登場させた後、残りの山札からアーティスト(K_total_artist - 1枚)をドローして引ける確率
+    p_art_in_warp = 1 - hypergeom.pmf(0, N - base_cards, K_total_artist - 1, 5)
+    p_art_in_next = 1 - hypergeom.pmf(0, N - base_cards, K_total_artist - 1, 3)
     
-    # 2ターン目以降（手番ドロー base_cards 枚時点）で、Artistが2枚以上手札にある確率
-    p_artist_exactly_1_in_base = hypergeom.pmf(1, N, K_total_artist, base_cards)
-    p_artist_zero_in_base = hypergeom.pmf(0, N, K_total_artist, base_cards)
-    # アーティスト1枚以上が確定している世界線での、2枚以上の確率
-    p_artist_at_least_2_final = (1.0 - p_artist_zero_in_base - p_artist_exactly_1_in_base) / (1.0 - p_artist_zero_in_base)
+    p_art_via_warp = p_use_warp * p_art_in_warp
+    
+    p_art_not_via_normal = 1.0
+    for draw_info in draw_inputs:
+        p_has_this_draw = 1 - hypergeom.pmf(0, N, draw_info["count"], base_cards)
+        p_art_in_this_draw = 1 - hypergeom.pmf(0, N - base_cards, K_total_artist - 1, draw_info["amount"])
+        p_art_not_via_this_draw = 1 - (p_has_this_draw * p_art_in_this_draw)
+        p_art_not_via_normal *= p_art_not_via_this_draw
+    p_art_via_normal_draw = p_no_warp * (1 - p_art_not_via_normal)
+    
+    p_art_via_next = p_use_next_lastly * p_art_in_next
+    
+    p_art_via_any_action = p_art_via_warp + p_art_via_normal_draw + p_art_via_next
+    p_artist_at_least_2_final = p_art_direct_ge2 + (p_art_exact1_in_base * p_art_via_any_action)
+    if p_artist_at_least_2_final > 1.0: p_artist_at_least_2_final = 1.0
 
     # --- 結果表示 ---
     st.header("🔄 引き直しの発生率")
@@ -135,13 +148,14 @@ else:
     })
     st.bar_chart(data=df_chart, x="初期手札の結果", y="確率 (%)")
 
-    # 🔥 追加：アーティストの重複キープ率
-    st.header("🧑‍🎤 2枚目以降のArtistカード所持率")
-    st.metric(
-        label="👥 ゲーム開始〜自身の最初のターン時に、Artistが2枚以上手札にある確率",
-        value=f"{p_artist_at_least_2_final * 100:.2f}%"
-    )
-    st.caption("※「Artistが最低1枚いる確定手札」からスタートし、手番ドロー（後攻なら1枚追加）を終えた段階で、手札に2枚目以降のArtistがダブってキープできている確率です。")
+    # 🔥 アーティストの重複キープ率（ドロー込み）
+    st.header("🧑‍🎤 2枚目以降のArtistカード確保率")
+    col_a1, col_a2 = st.columns(2)
+    with col_a1:
+        st.metric(label="🌟 通常手札での重複キープ率", value=f"{p_art_direct_ge2 * 100:.2f}%")
+    with col_a2:
+        st.metric(label="🔥 ドローカード使用込みの最終確保率", value=f"{p_artist_at_least_2_final * 100:.2f}%")
+    st.caption("※1枚目のArtistを場に出した後に『ディメンションワープ』や各種ドローを連鎖させ、2枚目以降のArtistを追加で引き込めている確率を合算しています。")
 
     # 指定カードの確保率表示
     st.header(f"🃏 『{card_name}』の引き込み確率")
@@ -149,4 +163,4 @@ else:
     with col_m1:
         st.metric(label="🌟 通常ルール（手札）での純粋な確保率", value=f"{p_magic_direct * 100:.2f}%")
     with col_m2:
-        st.metric(label="🔥 ワープ・通常ドロー・ネクスト（最後尾）込み最終確保率", value=f"{p_total_magic_success * 100:.2f}%")
+        st.metric(label="🔥 ワープ・通常ドロー・ネクスト込み最終確保率", value=f"{p_total_magic_success * 100:.2f}%")
